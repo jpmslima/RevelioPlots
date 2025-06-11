@@ -3,7 +3,8 @@
   // Tells VS Code how to build the container image.
   // It will look for the Dockerfile in the same folder.
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "context": ".."
   },
 
   // Forward the default Streamlit port to your local machine.
