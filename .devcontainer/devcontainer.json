@@ -1,0 +1,28 @@
+{
+  "name": "Streamlit App",
+  // Tells VS Code how to build the container image.
+  // It will look for the Dockerfile in the same folder.
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // Forward the default Streamlit port to your local machine.
+  "forwardPorts": [8501],
+
+  // Commands to run after the container is created.
+  // This is the best place to install your Python dependencies.
+  "postCreateCommand": "pip install --user -r requirements.txt",
+
+  // Configure VS Code settings and extensions specific to this container.
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ]
+    }
+  }
+}
