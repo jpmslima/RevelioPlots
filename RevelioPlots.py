@@ -229,14 +229,43 @@ def multi_structure_tab():
                     st.plotly_chart(rama_fig, use_container_width=True, key=f"rama_plot_{file_name}")
                 else:
                     st.warning("Could not generate Ramachandran plot for this structure.", key=f"rama_warning_{file_name}")
-
+def documentation_tab():
+    """Handles the UI for the Documentation tab."""
+    st.header("RevelioPlots Documentation")
+    try:
+        with open("readme.md", "r") as f:
+            st.markdown(f.read(), unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.error("The `readme.md` file was not found.")
+        st.info("Please make sure the documentation file is in the same directory as the application script.")
+        
 # --- Main App ---
 st.set_page_config(page_title="RevelioPlots", page_icon="🪄", layout="wide")
+
 st.sidebar.title("RevelioPlots")
-if os.path.exists('RevelioPlots-logo.png'): st.sidebar.image('RevelioPlots-logo.png', use_container_width=True)
-else: st.sidebar.markdown("### pLDDT Visualization Tool")
-st.sidebar.markdown("---"); st.sidebar.info("This application analyzes pLDDT scores from protein structure files (.cif) to visualize model confidence.")
-if not os.path.exists("examples"): os.makedirs("examples"); st.info("An 'examples' folder has been created. Add .cif files to it to use the example feature.")
-tab1, tab2 = st.tabs(["Single Structure Analysis", "Multi-Structure Comparison"])
-with tab1: single_structure_tab()
-with tab2: multi_structure_tab()
+
+logo_path = 'RevelioPlots-logo.png'
+if os.path.exists(logo_path):
+    st.sidebar.image(logo_path, use_container_width=True)
+else:
+    st.sidebar.markdown("### pLDDT Visualization Tool")
+
+st.sidebar.markdown("---")
+st.sidebar.write("This application analyzes protein structures `.mmcif` files to visualize analyze model confidence.")
+st.sidebar.info("Please confirm if your `.cif` files contain pLDDT scores. If they have B-Factor values, the application will interpret them as pLDDT scores.")
+
+if not os.path.exists("examples"):
+    os.makedirs("examples")
+    st.info("An 'examples' folder has been created. Add some .cif files to it to use the example feature.")
+
+# --- Main App Tabs ---
+tab1, tab2, tab3 = st.tabs(["Single Structure Analysis", "Multi-Structure Comparison", "Documentation"])
+
+with tab1:
+    single_structure_tab()
+
+with tab2:
+    multi_structure_tab()
+
+with tab3:
+    documentation_tab()
