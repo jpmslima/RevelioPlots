@@ -7,19 +7,21 @@ import plotly.graph_objects as go
 from Bio.PDB import MMCIFParser
 from Bio.PDB.Polypeptide import Polypeptide, is_aa, protein_letters_3to1
 import io
+import py3Dmol
+import streamlit.components.v1 as components
 
 # --- Helper Functions ---
 
 def get_color_for_plddt(plddt):
     """Returns a hex color code based on pLDDT score using AlphaFold's scheme."""
     if plddt > 90:
-        return "#0053D6"  # Very high (blue)
+        return "#0053D6"
     elif plddt > 70:
-        return "#65CBF3"  # Confident (cyan)
+        return "#65CBF3"
     elif plddt > 50:
-        return "#FFDB13"  # Low (yellow)
+        return "#FFDB13"
     else:
-        return "#FF7D45"  # Very low (orange)
+        return "#FF7D45"
 
 def get_legend_html():
     """Generates HTML for a color legend."""
@@ -101,9 +103,9 @@ def generate_ramachandran_plot(df, file_name):
         hoverinfo='text', name='Residues'
     ))
     shapes = [
-        dict(type="rect", xref="x", yref="y", x0=-180, y0=100, x1=-40, y1=180, fillcolor="rgba(173, 216, 230, 0.2)", layer="below", line_width=0), # Beta
-        dict(type="rect", xref="x", yref="y", x0=-160, y0=-70, x1=-30, y1=50, fillcolor="rgba(144, 238, 144, 0.2)", layer="below", line_width=0), # Alpha (R)
-        dict(type="rect", xref="x", yref="y", x0=30, y0=0, x1=100, y1=100, fillcolor="rgba(255, 182, 193, 0.2)", layer="below", line_width=0)  # Alpha (L)
+        dict(type="rect", xref="x", yref="y", x0=-180, y0=100, x1=-40, y1=180, fillcolor="rgba(173, 216, 230, 0.2)", layer="below", line_width=0),
+        dict(type="rect", xref="x", yref="y", x0=-160, y0=-70, x1=-30, y1=50, fillcolor="rgba(144, 238, 144, 0.2)", layer="below", line_width=0),
+        dict(type="rect", xref="x", yref="y", x0=30, y0=0, x1=100, y1=100, fillcolor="rgba(255, 182, 193, 0.2)", layer="below", line_width=0)
     ]
     fig.update_layout(
         title=f"Ramachandran Plot for {file_name}",
@@ -113,6 +115,17 @@ def generate_ramachandran_plot(df, file_name):
         width=600, height=600, showlegend=False, shapes=shapes
     )
     return fig
+
+def render_3d_view(cif_content):
+    """Creates and renders an interactive 3D view of the protein."""
+    view = py3Dmol.view(width=800, height=600)
+    view.addModel(cif_content, 'cif')
+    view.setStyle({'cartoon': {'colorscheme': {'prop':'b', 'gradient': 'roygb', 'min': 50, 'max': 90}}})
+    view.setBackgroundColor('#FFFFFF')
+    view.zoomTo()
+    # Generate the HTML and render it
+    components.html(view._make_html(), width=820, height=620, scrolling=False)
+
 
 def calculate_protein_data(file_or_buffer, file_name_for_error_logging=""):
     """
@@ -173,8 +186,19 @@ def single_structure_tab():
                 file_name = selected_file
         except FileNotFoundError:
             st.error("The 'examples' directory was not found."); return
+
     if cif_file_source and file_name:
         st.info(f"Processing: **{file_name}**")
+        if isinstance(cif_file_source, str):
+            with open(cif_file_source, 'r') as f:
+                cif_content = f.read()
+        else:
+            cif_content = cif_file_source.getvalue()
+
+        st.subheader("3D Interactive View")
+        st.info("Colored by pLDDT (B-factor). Red: low confidence, Blue: high confidence. Rotate with your mouse.")
+        render_3d_view(cif_content)
+
         protein_df = calculate_protein_data(cif_file_source, file_name)
         if protein_df is not None and not protein_df.empty:
             st.subheader("pLDDT Statistics")
@@ -185,7 +209,7 @@ def single_structure_tab():
             st.subheader("Ramachandran Plot"); st.markdown(get_legend_html(), unsafe_allow_html=True)
             rama_fig = generate_ramachandran_plot(protein_df, file_name)
             if rama_fig: st.plotly_chart(rama_fig, use_container_width=True)
-            else: st.warning("Could not generate Ramachandran plot (not enough consecutive standard amino acids).")
+            else: st.warning("Could not generate Ramachandran plot.")
 
 def multi_structure_tab():
     st.header("Compare Multiple Protein Structures")
@@ -201,71 +225,62 @@ def multi_structure_tab():
             selected_files = st.multiselect("Choose example structures to compare:", example_files)
             if selected_files: cif_files_info = [(os.path.join("examples", f), f) for f in selected_files]
         except FileNotFoundError: st.error("The 'examples' directory was not found."); return
+
     if cif_files_info:
-        all_dfs = []
+        all_data = []
         with st.spinner("Processing files..."):
             for file_source, file_name in cif_files_info:
                 protein_df = calculate_protein_data(file_source, file_name)
                 if protein_df is not None:
-                    protein_df['File'] = file_name; all_dfs.append(protein_df)
-        if not all_dfs: st.error("Could not process any of the selected files."); return
-        st.subheader("pLDDT Statistics Summary")
-        stats_data = {df['File'].iloc[0]: {'Mean': df['pLDDT'].mean(),'Median': df['pLDDT'].median(),'Std Dev': df['pLDDT'].std()} for df in all_dfs}
-        st.dataframe(pd.DataFrame.from_dict(stats_data, orient='index').style.format("{:.2f}"), use_container_width=True)
+                    if isinstance(file_source, str):
+                        with open(file_source, 'r') as f:
+                            content = f.read()
+                    else:
+                        content = file_source.getvalue()
+                    all_data.append({'df': protein_df, 'name': file_name, 'content': content})
+        if not all_data: st.error("Could not process any of the selected files."); return
+        
+        all_dfs = [d['df'].assign(File=d['name']) for d in all_data]
+        stats_data = {d['name']: {'Mean': d['df']['pLDDT'].mean(),'Median': d['df']['pLDDT'].median(),'Std Dev': d['df']['pLDDT'].std()} for d in all_data}
+        st.subheader("pLDDT Statistics Summary"); st.dataframe(pd.DataFrame.from_dict(stats_data, orient='index').style.format("{:.2f}"), use_container_width=True)
+        
         st.subheader("Comparative pLDDT Distribution Plot"); combined_df = pd.concat(all_dfs, ignore_index=True); st.plotly_chart(px.box(combined_df, x="File", y="pLDDT", color="File", points="all", title="Distribution of pLDDT Values Across Multiple Structures", labels={"pLDDT": "pLDDT Score", "File": "Structure File"}, template="plotly_white", hover_data=['Residue', 'pLDDT']).update_layout(yaxis_range=[0,100], xaxis_title=None, title_x=0.5, showlegend=False), use_container_width=True)
+
         st.subheader("Per-Structure Analysis")
-        # Display the legend ONCE, outside the loop
         st.markdown(get_legend_html(), unsafe_allow_html=True)
-        for df in all_dfs:
-            file_name = df['File'].iloc[0]
+        for data_dict in all_data:
+            file_name, protein_df, cif_content = data_dict['name'], data_dict['df'], data_dict['content']
             with st.expander(f"Analysis for: {file_name}"):
-                st.markdown("##### Confidence-Colored Sequence")
-                st.markdown(generate_sequence_figure_html(df), unsafe_allow_html=True)
+                st.markdown("##### 3D Interactive View"); st.info("Colored by pLDDT (B-factor)."); render_3d_view(cif_content)
                 st.markdown("---")
-                st.markdown("##### Ramachandran Plot")
-                rama_fig = generate_ramachandran_plot(df, file_name)
-                if rama_fig:
-                    # Add unique key to the chart
-                    st.plotly_chart(rama_fig, use_container_width=True, key=f"rama_plot_{file_name}")
-                else:
-                    st.warning("Could not generate Ramachandran plot for this structure.", key=f"rama_warning_{file_name}")
+                st.markdown("##### Confidence-Colored Sequence"); st.markdown(generate_sequence_figure_html(protein_df), unsafe_allow_html=True)
+                st.markdown("---")
+                st.markdown("##### Ramachandran Plot");
+                rama_fig = generate_ramachandran_plot(protein_df, file_name);
+                if rama_fig: st.plotly_chart(rama_fig, use_container_width=True, key=f"rama_plot_{file_name}")
+                else: st.warning("Could not generate Ramachandran plot for this structure.", key=f"rama_warning_{file_name}")
+
 def documentation_tab():
     """Handles the UI for the Documentation tab."""
     st.header("RevelioPlots Documentation")
+    doc_path = "readme.md"
     try:
-        with open("readme.md", "r") as f:
+        with open(doc_path, "r") as f:
             st.markdown(f.read(), unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error("The `readme.md` file was not found.")
-        st.info("Please make sure the documentation file is in the same directory as the application script.")
-        
+        st.error(f"Documentation file not found: `{doc_path}`")
+        st.info("Please ensure the `readme.md` file is in the same directory as the application script.")
+
 # --- Main App ---
 st.set_page_config(page_title="RevelioPlots", page_icon="🪄", layout="wide")
-
 st.sidebar.title("RevelioPlots")
+if os.path.exists('RevelioPlots-logo.png'): st.sidebar.image('RevelioPlots-logo.png', use_container_width=True)
+else: st.sidebar.markdown("### pLDDT Visualization Tool")
+st.sidebar.markdown("---"); st.sidebar.info("This application analyzes pLDDT scores from protein structure files (.cif) to visualize model confidence.")
+if not os.path.exists("examples"): os.makedirs("examples"); st.info("An 'examples' folder has been created. Add .cif files to it to use the example feature.")
 
-logo_path = 'RevelioPlots-logo.png'
-if os.path.exists(logo_path):
-    st.sidebar.image(logo_path, use_container_width=True)
-else:
-    st.sidebar.markdown("### pLDDT Visualization Tool")
-
-st.sidebar.markdown("---")
-st.sidebar.write("This application analyzes protein structures `.mmcif` files to visualize analyze model confidence.")
-st.sidebar.info("Please confirm if your `.cif` files contain pLDDT scores. If they have B-Factor values, the application will interpret them as pLDDT scores.")
-
-if not os.path.exists("examples"):
-    os.makedirs("examples")
-    st.info("An 'examples' folder has been created. Add some .cif files to it to use the example feature.")
-
-# --- Main App Tabs ---
 tab1, tab2, tab3 = st.tabs(["Single Structure Analysis", "Multi-Structure Comparison", "Documentation"])
 
-with tab1:
-    single_structure_tab()
-
-with tab2:
-    multi_structure_tab()
-
-with tab3:
-    documentation_tab()
+with tab1: single_structure_tab()
+with tab2: multi_structure_tab()
+with tab3: documentation_tab()

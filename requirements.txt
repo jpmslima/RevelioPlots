@@ -5,3 +5,4 @@ matplotlib
 seaborn
 biopython
 plotly
+py3dmol
